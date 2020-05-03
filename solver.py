@@ -427,10 +427,10 @@ def draw(G,T):
 
 if __name__ == '__main__':
     #assert len(sys.argv) == 2
-    start = 1
-    end = 400
-    size = 'large'
-    draw_graph = False
+    start = 195
+    end = 195
+    size = 'small'
+    draw_graph = True
     for i in range(start,1+end):
         path = 'inputs/' + size + '-'+str(i)+'.in'
         G = read_input_file(path)
