@@ -7,103 +7,6 @@ import matplotlib.pyplot as plt
 import sys
 import random
 
-
-def solve(G):
-    """
-    Args:
-        G: networkx.Graph
-
-    Returns:
-        T: networkx.Graph
-    """
-
-    # TODO: your code here!
-    start_with = 1
-
-    all_nodes = set(G)
-    if start_with is None:
-        start_with = arbitrary_element(all_nodes)
-    if start_with not in G:
-        raise nx.NetworkXError('node {} is not in G'.format(start_with))
-    dominating_set = {start_with}
-    dominated_nodes = set(G[start_with])
-    remaining_nodes = all_nodes - dominated_nodes - dominating_set
-    while remaining_nodes:
-        # Choose an arbitrary node and determine its undominated neighbors.
-        v = remaining_nodes.pop()
-        undominated_neighbors = set(G[v]) - dominating_set
-        # Add the node to the dominating set and the neighbors to the
-        # dominated set. Finally, remove all of those nodes from the set
-        # of remaining nodes.
-        dominating_set.add(v)
-        dominated_nodes |= undominated_neighbors
-        remaining_nodes -= undominated_neighbors
-    T = G.subgraph(dominating_set)
-    print(T.nodes())
-    print(T.edges())
-    print(nx.is_tree(T))
-    print(nx.is_dominating_set(G, T.nodes))
-    return nx.minimum_spanning_tree(G.subgraph(dominating_set))
-
-#idk wtf this is
-def potential_fct(black, gray, white, G):
-    # returns number of white vertices + number of black components
-    # black components = number of connected components induced by black vertices
-    num_black_components = nx.number_connected_components(G.subgraph(black))
-    return len(white) + num_black_components
-
-#idk wtf this is
-def node_potential(black, gray, white, node):
-    # color it black
-    # color adjacent white vertices gray
-    # call potential function
-    white.remove(node)
-    black.add(node)
-    for adj_node in G[node]:
-        if adj_node in white:
-            white.remove(adj_node)
-            gray.add(adj_node)
-    return potential_fct(black, gray, white, G)
-
-#idk wtf this is
-def greedy(G):
-    black = set() # vertices in T
-    gray = set() # vertices not in T but adjacent to T
-    white = set(G) # vertices not in C and not adjacent to T
-
-    flag = 1
-    while flag == 1:
-        # if there exists a white or gray vertex such that
-        # coloring it in black and its adjacent white vertices in gray
-        # would reduce the value of potential function
-        initial_potential = potential_fct(black,gray,white,G)
-        potentials = {}
-        for node in white:
-            b = black.copy()
-            g = gray.copy()
-            w = white.copy()
-            potentials[node] = initial_potential - node_potential(b, g, w, node)
-        for node in gray:
-            b = black.copy()
-            g = gray.copy()
-            w = white.copy()
-            potentials[node] = initial_potential - node_potential(b, g, w, node)
-        print(potentials)
-        if len(potentials) == 0:
-            break
-        if max(potentials.values()) > 1:
-            chosen_node = max(potentials,key=potentials.get)
-            print("chosen node:",chosen_node)
-            black.add(chosen_node)
-            if chosen_node in white:
-                white.remove(chosen_node)
-            if chosen_node in gray:
-                gray.remove(chosen_node)
-        else:
-            flag = 0
-
-    return nx.minimum_spanning_tree(G.subgraph(black))
-
 #finds spanning edges
 def spanning_edges(G, weight='weight', data=True):
     from networkx.utils import UnionFind
@@ -152,12 +55,36 @@ def random_pruning(T):
 
 #random as fuck pruning
 def more_random_pruning(T):
-    pruning = 3*T.number_of_nodes() #how much do u wanna prune
+    pruning = 5*T.number_of_nodes() #how much do u wanna prune
     for i in range(pruning):
         random_node = random.choice(list(T.nodes()))
         t_new = T.copy()
         t_new.remove_node(random_node)
         if t_new.number_of_nodes() > 0 and is_valid_network(G, t_new):
+            T = t_new
+    return T
+
+#only prune if it improves the avg distance
+def dont_always_prune(T):
+    min_dist = average_pairwise_distance_fast(T)
+    for node in G.nodes():
+        if node not in T.nodes():
+            t_new = T.copy()
+            t_new_nodes = list(t_new.nodes()) + [node] #add the node to the tree
+            t_new = G.subgraph(t_new_nodes) # get subgraph of tnew
+            for source in t_new_nodes:
+                new_T = shortest_paths(t_new, source) # see if shortest path tree has better dist
+                dist = average_pairwise_distance_fast(new_T)
+                if dist < min_dist:
+                    min_dist = dist
+                    T = new_T
+    pruning = 5 * T.number_of_nodes()  # how much do u wanna prune
+    for i in range(pruning):
+        random_node = random.choice(list(T.nodes()))
+        t_new = T.copy()
+        t_new.remove_node(random_node)
+        if t_new.number_of_nodes() > 0 and is_valid_network(G, t_new) and average_pairwise_distance_fast(
+                t_new) < average_pairwise_distance_fast(T):
             T = t_new
     return T
 
@@ -204,6 +131,17 @@ def min_shortest_paths2(G):
             T = new_T
     return T, min_dist
 
+def min_shortest_paths3(G):
+    T = leaf_pruning(shortest_paths(G, 0))
+    min_dist = average_pairwise_distance_fast(T)
+    for source in G.nodes():
+        new_T = dont_always_prune(shortest_paths(G, source))
+        dist = average_pairwise_distance_fast(new_T)
+        if dist < min_dist:
+            min_dist = dist
+            T = new_T
+    return T, min_dist
+
 # returns min spanning tree with leaves pruned. and corresponding distance
 def min_spanning_tree(G):
     T_spanning = leaf_pruning(spanning_tree(G))
@@ -222,7 +160,7 @@ def min_vertex_cover(G):
         if dist < min_dist:
             min_dist = dist
             T = new_T
-    random_times = 20 # how much random????!!!
+    random_times = 10 # how much random????!!!
     min_dist = math.inf
     best_T = None
     for i in range(random_times):
@@ -232,6 +170,41 @@ def min_vertex_cover(G):
             min_dist = new_dist
             best_T = new_T
     return best_T, average_pairwise_distance_fast(best_T)
+
+#continually adds most central nodes until tree is created
+def min_centrality(G):
+    centrality = {}
+    for node in G.nodes():
+        centrality[node] = nx.algorithms.centrality.closeness_centrality(G,node,distance='weight')
+    nodes = []
+    bcentrality = nx.algorithms.centrality.betweenness_centrality(G,weight='weight')
+    for node in sorted(centrality,key=centrality.get,reverse=True):
+        nodes += [node]
+        newG = G.subgraph(nodes)
+        T = shortest_paths(newG, list(newG.nodes())[0])
+        if len(T.nodes()) > 0 and is_valid_network(G,T):
+            min_dist = average_pairwise_distance_fast(T)
+            for source in newG.nodes():
+                new_T = shortest_paths(newG, source)
+                dist = average_pairwise_distance_fast(new_T)
+                if dist < min_dist:
+                    min_dist = dist
+                    T = new_T
+            random_times = 10  # how much random????!!!
+            min_dist = math.inf
+            best_T = None
+            for i in range(random_times):
+                new_T = more_random_pruning(T)
+                new_dist = average_pairwise_distance_fast(new_T)
+                if new_dist < min_dist:
+                    min_dist = new_dist
+                    best_T = new_T
+            return best_T, average_pairwise_distance_fast(best_T)
+
+def steiner_tree(G):
+    nodes = nx.dominating_set(G)
+    T = nx.algorithms.approximation.steiner_tree(G,nodes,weight='weight')
+    return T,average_pairwise_distance_fast(T)
 
 def random_shortest_paths(G):
     V = G.nodes()
@@ -444,8 +417,8 @@ def draw(G,T):
     pos = nx.spring_layout(G)
     nx.draw_networkx(G,pos=pos, node_color='blue')
     nx.draw_networkx(T, pos=pos, node_color='red', edge_color='red')
-    #labels = nx.get_edge_attributes(G, 'weight')
-    #nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)
+    labels = nx.get_edge_attributes(G, 'weight')
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)
     plt.show()
 
 # Here's an example of how to run your solver.
@@ -454,9 +427,9 @@ def draw(G,T):
 
 if __name__ == '__main__':
     #assert len(sys.argv) == 2
-    start = 3
-    end = 3
-    size = 'small'
+    start = 1
+    end = 400
+    size = 'large'
     draw_graph = False
     for i in range(start,1+end):
         path = 'inputs/' + size + '-'+str(i)+'.in'
@@ -468,12 +441,13 @@ if __name__ == '__main__':
             print(str(i), "is done.")
             continue
 
-        functions = [min_shortest_paths, min_shortest_paths2, min_spanning_tree, min_vertex_cover]
+        functions = [min_shortest_paths, min_shortest_paths2, min_shortest_paths3, min_vertex_cover, min_centrality]
         min_dist = math.inf
         best_tree = None
         for func in functions:
             T,dist = func(G)
             #print(func,dist)
+            #print("Tnodes",sorted(list(T.nodes())))
             if dist < min_dist and is_valid_network(G,T):
                 min_dist = dist
                 best_tree = T
